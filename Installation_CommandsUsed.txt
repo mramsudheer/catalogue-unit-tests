@@ -1,0 +1,165 @@
+https://github.com/mramsudheer/catalogue-unit-tests.git
+JENKINS MASTER
+==============
+
+sudo curl -o /etc/yum.repos.d/jenkins.repo     https://pkg.jenkins.io/rpm-stable/jenkins.repo
+sudo dnf install fontconfig java-21-openjdk -y
+sudo dnf install jenkins -y
+sudo systemctl daemon-reload
+sudo systemctl enable jenkins
+sudo systemctl restart jenkins
+
+<publicip>:8080
+
+PASSWORD:
+cat /var/lib/jenkins/secrets/initialAdminPassword
+
+INSTALL PLUGINS
+1. Pipeline stage view
+2. Pipeline Utility Steps
+3. AWS Credentials
+4. Pipeline: AWS Steps
+5. SonarQube Scanner
+
+JENKINS AGENT
+=============
+Create with 50GB and install java
+sudo dnf install fontconfig java-21-openjdk -y
+
+sudo lsblk
+sudo growpart /dev/nvme0n1 4
+sudo lvextend -L +10G /dev/mapper/RootVG-homeVol
+sudo lvextend -L +10G /dev/mapper/RootVG-rootVol
+sudo lvextend -L +10G /dev/mapper/RootVG-varVol
+sudo xfs_growfs /
+sudo xfs_growfs /home
+sudo xfs_growfs /var
+df -hT
+
+# Install npm in agent
+dnf module disable nodejs -y
+dnf module enable nodejs:20 -y
+dnf install nodejs -y
+
+Install Docker in agent
+# Docker
+dnf -y install dnf-plugins-core
+dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+dnf install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
+systemctl start docker
+systemctl enable docker
+usermod -aG docker ec2-user
+Logoff and Login
+
+CREATING A NODE
+===============
+In Jenkins Master URL -> your project -> settings -> Nodes -> roboshop
+Number of executors:3
+Remote root directory: /home/ec2-user/jenkins-agent (It automatically creates in NODE)
+Labels: ROBOSHOP
+Usage: Only build Jobs with label expressions matching this Node
+Launch method: Launch agents via SSH
+Host: <Agent Private IP>
+Credentials:
+    1. ID:ssh-auth (ssh-auth)
+    2. AWS Credentials (aws_credts)
+Host Key Verification Strategy:Non verifying Verification Strategy
+Availability: Keep this agent online as mush as possible
+
+DISCONNECT AND CONNECT AGAIN THE NODE IF YOU SEE THE FOLLOWING ERROR
++ docker build -t catalogue:1.0.0 .
+ERROR: permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+
+CREATE A FOLDER
+===============
+In Jenkins Master URL -> New Item -> Folder(ROBOSHOP)
+in this folder -> (creating a project)New Item -> pipeline(catalogue-unit-tests) -> Configure -> Pipeline -> Pipeline script from SCM -> 
+    SCM: Git
+    Repository URL:https://github.com/mramsudheer/catalogue-unit-tests.git
+    Branch Specifier: main
+apply, save and build
+
+NOW CREATE ECR AND PUSH THE IMAGE
+=============================
+We can create using Terraform or From console
+    Amazon ECR -> Private registry ->Repositories -> Create private repository
+    General settings -> Repository name -> roboshop/catalogue
+        Image tag settings: Mutable
+    To see the Push commands
+        Amazon ECR ->Private registry->Repositories->roboshop/catalogue-> View Push commands
+
+CREATE SonarQube
+===============
+marketplace -> SonarQube CE on AWS t2.medium(ami-0e132678e65cadfcc)
+Advanced details -> Spot Instance
+
+ON JENKINS SERVER
+mkdir GitFiles
+cd GitFiles
+git clone https://github.com/mramsudheer/catalogue-unit-tests.git
+cd catalog
+chmod 400 Rams.pem
+ssh -i <key.pem> ubuntu@<SonarQubepublicipaddress>
+cat /opt/default-sonar-login.txt
+<SonarQubePublicip>:90000
+
+Generate Tokens
+http://<SonarQubePublicip>:9000/account/security
+    Name: Jenkins
+    Type: Global Analysis Token
+    Expires on : 30 days
+    Notedown the generated tocken(sqa_8f0062ff4cbf9d15f6cea8bb189136474b9f6d96)
+
+
+
+In Jenkins URL -> Settings -> tools-> SonarQube Scanner installations -> Add SonarQube installations
+    SonarQube Scanner
+    Name:Sonar-8.0
+    Sonar-8.0
+In Jenkins URL -> Settings -> System -> SonarQube servers -> SonarQube installations - Add
+    Name:sonar-server
+    Server URL:http://<SonarQubePublicip>:90000
+Create a Credential:secret text with generated tocken abv(sonar-creds)
+
+After build success, in SonarQube server url we can see roboshop-catalogue-unit-tests
+    under Administration->Projects-> Management
+
+in SonarQube server url, Administration -> General Settings-> Mode-> Standard
+
+CONFIGURING QUALITY GATES
+======================
+http://<SonarQubePublicip>:90000
+Quality Gates-> create 
+    Name: roboshop
+    Add Condition
+        On Overall code
+            Security Rating
+            Value: A
+            Maintenability rating
+            Calue: A
+            Vulnerabilities
+            Value: 0
+            Bugs
+            Value: 0
+            Code Smells
+            Value : 0
+    Finally. click on 3 dots and set as default
+
+CREATING WEB-HOOK
+=================
+In SonarQube Server
+http://<SonarQubePublicip>:90000
+Administration -> configurations-> webhooks
+    Create -> Name: jenkins URL: http://<jenkinspublicip>:8080/sonarqube-webhook/
+====================================================================================================
+In Jenkins
+https://github.com/mramsudheer/jenkins.git
+Settings -> webhooks -> Create 
+Payload URL: http://<master publicip>:8080/github-webhook/
+Content type: application/json
+SSL verification: Disable
+Which events would you like to trigger this webhook?
+    Just the push event.
+NOW in Jenkins URL
+Hello-pipeline(Your Project) -> Configure -> General -> Triggers -> GitHub hook trigger for GITScm polling
+
