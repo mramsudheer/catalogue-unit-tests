@@ -28,6 +28,11 @@ pipeline{
         stage('Install Dependencies'){
             steps{
                 script{
+                    /*
+                    npm install reads the \catalogue-unit-tests\package.json file, 
+                    calculates the dependency tree, and downloads all required 
+                    open-source libraries into a newly created /home/ec2-user/jenkins-agent
+                        folder inside the virtual machine. */
                     sh """
                         npm install
                     """
@@ -37,6 +42,9 @@ pipeline{
         stage('Unit Test'){
             steps{
                 script{
+                    /* When you run npm test, it looks inside the project's \catalogue-unit-tests\package.json file, 
+                        finds the "scripts" object, and executes whatever command is assigned 
+                        to the key "test". */
                     sh """
                         npm test
                     """
